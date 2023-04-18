@@ -100,9 +100,11 @@ class List {
     T value;
     Node() : BaseNode(), value() {}
     Node(const T& value) : BaseNode(), value(value) {}
+    Node(const BaseNode &arg, const T &val) : BaseNode(arg), value(val) {}
+    Node(BaseNode* arg) : BaseNode(arg), value() {} //конструктор от бейзноды
   };
 
-  BaseNode* fakeNode;
+  BaseNode* fakeNode; // for function link two_nodes
 
  public:
   List();
@@ -112,11 +114,12 @@ class List {
   List(size_t, const Alloc&);
   List(size_t, const T&, const Alloc&);
   // переписать
-  using AllocTraits = std::allocator_traits<Alloc>;
 //cделать указатель на налптр или указатель на самого себя
   using value_type = T;
+
 //  using NodeAlloc = typename Alloc::template rebind<Node>::other; //эта строка под вопросом, вроде надо
-  using NodeAlloc = std::allocator_traits<typename Alloc::template rebind<Node>::other>; //эта строка под вопросом, вроде надо
+  using NodeAlloc = typename std::allocator_traits<Alloc>::template rebind_alloc<Node>;
+  using AllocTraits = std::allocator_traits<NodeAlloc>;//эта строка под вопросом, вроде надо
   using size_type = std::size_t;
   using difference_type = std::ptrdiff_t;
   using reference = T&;
@@ -149,8 +152,46 @@ class List {
     }
 
   };
-  void create_fakenode() {}
-  void link_nodes() {}
+
+ public:
+//  BaseNode* get_fakeNode() {
+//    return fakeNode;
+//  }
+
+  BaseNode* create_basenode() {
+    BaseNode* node = AllocTraits::allocate(alloc_, 1);
+    AllocTraits::construct(alloc_, node);
+    return node;
+  }
+  Node* create_node(const T& value) {
+    Node* node = AllocTraits::allocate(alloc_, 1);
+    AllocTraits::construct(alloc_, node, value);
+    return node;
+  }
+
+  void create_fakenode() {
+    fakeNode = create_basenode();
+    fakeNode->next = fakeNode->prev = fakeNode;
+  }
+
+  void link_with_basenode(BaseNode* prev, BaseNode* next) {
+    prev->next = next;
+    next->prev = prev;
+    next->next = prev;
+    prev->prev = next;
+  }
+  void link_with_node(BaseNode* prev, Node* next) {
+    link_two_basenodes(prev, next);
+}
+  void link_three_basenodes(BaseNode* first, BaseNode* second, BaseNode* third) {
+    second->next = third;
+    third->prev = second;
+    second->next = first;
+    first->prev = third;
+  }
+  void link_three_nodes(BaseNode* first, Node* second, Node* third) {
+    link_three_basenodes(first, second, third);
+  }
   size_t size() const { return size_; }
   bool empty() const {return size_ == 0;}
   void clear() {}
@@ -164,39 +205,42 @@ class List {
 
 //сделать конструкторы
 template <typename T, typename Alloc>
-List<T, Alloc>::List() : size_(0), alloc_(NodeAlloc()) { //
-  fakeNode = NodeAlloc::allocate(alloc_, 1); //something other
-  fakeNode->next = fakeNode->prev = fakeNode; //зацикливаем
+List<T, Alloc>::List() : size_(0), alloc_(NodeAlloc()) {
+  create_fakenode();
 }
 
 template <typename T, typename Alloc>
 List<T, Alloc>::List(size_t size) : size_(size), alloc_(NodeAlloc()) {
-  fakeNode = NodeAlloc::allocate(alloc_, 1);
-  fakeNode->next = fakeNode->prev = fakeNode;
-  Node* newNode1 = NodeAlloc::allocate(alloc_, 1);
-  NodeAlloc::construct(alloc_, newNode1);
-  fakeNode->next = newNode1;
-  newNode1->prev = fakeNode;
-  newNode1->next = fakeNode;
-  fakeNode->prev = newNode1;
+  create_fakenode();
+  BaseNode* Node_before = create_basenode(); //как применить наследование от ноды, чтобы
+  link_with_basenode(fakeNode, Node_before);
   for (size_t i = 1; i < size_; ++i) {
-    Node* newNode = NodeAlloc::allocate(alloc_, 1);
-    NodeAlloc::construct(alloc_, newNode);
-    fakeNode->next = newNode;
-    newNode->prev = fakeNode;
-    newNode->next = fakeNode;
-    fakeNode->prev = newNode;
+    BaseNode* newNode = create_basenode();
+    link_three_basenodes(fakeNode, Node_before, newNode);
+    Node_before = newNode;
   }
 }
 
 template <typename T, typename Alloc>
-List<T, Alloc>::List(size_t size, const T& value) : size_(size), alloc_(NodeAlloc()), fakeNode(nullptr) {
-  fakeNode->next = fakeNode->prev = fakeNode;
+List<T, Alloc>::List(size_t size, const T& value) : size_(size), alloc_(NodeAlloc()) {
+  create_fakenode();
+  Node* Node_before = create_node();
+  link_two_nodes(fakeNode, Node_before);
+  for (size_t i = 1; i < size_; ++i) {
+    Node* newNode = create_node();
+    link_three_nodes(fakeNode, Node_before, newNode);
+    Node_before = newNode;
+  }
 }
 
 template <typename T, typename Alloc>
-List<T, Alloc>::List(const Alloc& alloc) : size_(0), alloc_(),
-//List(size_t, const T&, const Alloc&);
-//
+List<T, Alloc>::List(const Alloc& alloc) : size_(0), alloc_(AllocTraits::select_on_container_copy_construction()) {
+  create_fakenode();
+}
+template <typename T, typename Alloc>
+List<T, Alloc>::List(size_t, const T&, const Alloc&);
 
 
+int main() {
+  List<int> l(5);
+}
