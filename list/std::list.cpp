@@ -112,12 +112,11 @@ class List {
   List(size_t, const Alloc&);
   List(size_t, const T&, const Alloc&);
   // переписать
+  using AllocTraits = std::allocator_traits<Alloc>;
 //cделать указатель на налптр или указатель на самого себя
   using value_type = T;
-
 //  using NodeAlloc = typename Alloc::template rebind<Node>::other; //эта строка под вопросом, вроде надо
-  using NodeAlloc = typename std::allocator_traits<Alloc>::template rebind_alloc<Node>;
-  using AllocTraits = std::allocator_traits<NodeAlloc>;//эта строка под вопросом, вроде надо
+  using NodeAlloc = std::allocator_traits<typename Alloc::template rebind<Node>::other>; //эта строка под вопросом, вроде надо
   using size_type = std::size_t;
   using difference_type = std::ptrdiff_t;
   using reference = T&;
@@ -150,14 +149,7 @@ class List {
     }
 
   };
-  void create_node(BaseNode* node) {
-    node = AllocTraits::allocate(alloc_, 1);
-    AllocTraits::construct(alloc_, node);
-  }
-  void create_fakenode() {
-    create_node(fakeNode);
-    fakeNode->next = fakeNode->prev = fakeNode;
-  }
+  void create_fakenode() {}
   void link_nodes() {}
   size_t size() const { return size_; }
   bool empty() const {return size_ == 0;}
@@ -179,21 +171,21 @@ List<T, Alloc>::List() : size_(0), alloc_(NodeAlloc()) { //
 
 template <typename T, typename Alloc>
 List<T, Alloc>::List(size_t size) : size_(size), alloc_(NodeAlloc()) {
-  create_fakenode();
-  BaseNode* Node_before;
-  create_node(Node_before);
-  fakeNode->next = Node_before;
-  Node_before->prev = fakeNode;
-  Node_before->next = fakeNode;
-  fakeNode->prev = Node_before;
+  fakeNode = NodeAlloc::allocate(alloc_, 1);
+  fakeNode->next = fakeNode->prev = fakeNode;
+  Node* newNode1 = NodeAlloc::allocate(alloc_, 1);
+  NodeAlloc::construct(alloc_, newNode1);
+  fakeNode->next = newNode1;
+  newNode1->prev = fakeNode;
+  newNode1->next = fakeNode;
+  fakeNode->prev = newNode1;
   for (size_t i = 1; i < size_; ++i) {
-    Node* newNode = AllocTraits ::allocate(alloc_, 1);
-    AllocTraits ::construct(alloc_, newNode);
-    Node_before->next = newNode;
-    newNode->prev = Node_before;
+    Node* newNode = NodeAlloc::allocate(alloc_, 1);
+    NodeAlloc::construct(alloc_, newNode);
+    fakeNode->next = newNode;
+    newNode->prev = fakeNode;
     newNode->next = fakeNode;
     fakeNode->prev = newNode;
-    Node_before = newNode;
   }
 }
 
@@ -202,12 +194,9 @@ List<T, Alloc>::List(size_t size, const T& value) : size_(size), alloc_(NodeAllo
   fakeNode->next = fakeNode->prev = fakeNode;
 }
 
-//template <typename T, typename Alloc>
-//List<T, Alloc>::List(const Alloc& alloc) : size_(0), alloc_(),
+template <typename T, typename Alloc>
+List<T, Alloc>::List(const Alloc& alloc) : size_(0), alloc_(),
 //List(size_t, const T&, const Alloc&);
 //
 
-int main() {
-  List<int> l(5);
 
-}
