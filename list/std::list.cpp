@@ -90,7 +90,7 @@ class List {
     Node() : BaseNode(), value() {}
     Node(const T& value) : BaseNode(), value(value) {}
     Node(const BaseNode &arg, const T &val) : BaseNode(arg), value(val) {}
-    Node(BaseNode* arg) : BaseNode(), value() {} //конструктор от бейзноды
+    Node(BaseNode*) : BaseNode(), value() {} //конструктор от бейзноды
   };
 
   BaseNode* fakeNode; // for function link two_nodes
@@ -103,6 +103,8 @@ class List {
   List(size_t, const Alloc&);
   List(size_t, const T&, const Alloc&);
   List(const List&);
+  ~List();
+  List& operator=(const List&);
   // переписать
 //cделать указатель на налптр или указатель на самого себя
   using value_type = T;
@@ -126,6 +128,7 @@ class List {
 
    public:
     BaseNode* node;
+
     using iterator_category = std::bidirectional_iterator_tag;
     using pointer = std::conditional_t<IsConst, const T* , T* >;
     using reference = std::conditional_t<IsConst, const T &, T &>;
@@ -187,10 +190,10 @@ class List {
 
  public:
 
-    using iterator = Iterator<false>;
-    using const_iterator = Iterator<true>;
-    using reverse_iterator = std::reverse_iterator<iterator>;
-    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+  using iterator = Iterator<false>;
+  using const_iterator = Iterator<true>;
+  using reverse_iterator = std::reverse_iterator<iterator>;
+  using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
   iterator begin() { return iterator(fakeNode->next); }
   const_iterator begin() const  { return begin(); }
@@ -199,9 +202,9 @@ class List {
   const_iterator cbegin() const { return begin(); }
   const_iterator cend() const { return end(); }
   reverse_iterator rbegin() { return reverse_iterator(fakeNode); }
-  const_reverse_iterator rbegin() const { return const_reverse_iterator(end());}
+  const_reverse_iterator rbegin() const { return const_reverse_iterator(end()); }
   reverse_iterator rend() { return reverse_iterator(begin()); }
-  const_reverse_iterator rend() const { return const_reverse_iterator(begin());}
+  const_reverse_iterator rend() const { return const_reverse_iterator(begin()); }
   const_reverse_iterator crbegin() const { return const_reverse_iterator(end()); }
   const_reverse_iterator crend() const { return const_reverse_iterator(begin()); }
 
@@ -222,34 +225,40 @@ class List {
     fakeNode->next = fakeNode->prev = fakeNode;
   }
 
-  void link_with_basenode(BaseNode* prev, BaseNode* next) {
+//  void link_with_basenode(BaseNode* prev, BaseNode* next) {
+//    prev->next = next;
+//    next->prev = prev;
+//    next->next = prev;
+//    prev->prev = next;
+//  }
+
+  void link_with_node(BaseNode* prev, Node* next) {
     prev->next = next;
     next->prev = prev;
     next->next = prev;
     prev->prev = next;
   }
 
-  void link_with_node(BaseNode* prev, Node* next) {
-    link_with_basenode(prev, next);
-  }
+//  void link_three_basenodes(BaseNode* first, BaseNode* second, BaseNode* third) {
+//    third->prev = second;
+//    second->next = third;
+//    first->prev = third;
+//    third->next = first;
+//  }
 
-  void link_three_basenodes(BaseNode* first, BaseNode* second, BaseNode* third) {
+  void link_three_nodes_from_left(BaseNode* first, Node* second, Node* third) {
     third->prev = second;
     second->next = third;
     first->prev = third;
     third->next = first;
   }
 
-  void link_three_nodes_from_left(BaseNode* first, Node* second, Node* third) {
-    link_three_basenodes(first, second, third);
-  }
-
   void fill_empty() {
     Node* Node_before = static_cast<Node*>(create_basenode()); //как применить наследование от ноды, чтобы
-    link_with_basenode(fakeNode, Node_before);
+    link_with_node(fakeNode, Node_before);
     for (size_t i = 1; i < size_; ++i) {
       Node* newNode = static_cast<Node*>(create_basenode());
-      link_three_basenodes(fakeNode, Node_before, newNode);
+      link_three_nodes_from_left(fakeNode, Node_before, newNode);
       Node_before = newNode;
     }
   }
@@ -263,23 +272,22 @@ class List {
       Node_before = newNode;
     }
   }
+  void deallocate_node(Node* node) {
+    AllocTraits::destroy(alloc_, node);
+    AllocTraits::deallocate(alloc_, node, 1);
+  }
 
   size_t size() const { return size_; }
   NodeAlloc get_allocator() const { return alloc_;}
   bool empty() const { return size_ == 0;}
   void clear() {}
 
-  void insert() {//вставка по константному итератору, значение вставляется ПЕРЕД итератором
-    // чтобы вставить в начало листа, делаем инсерт по итератору бегин
-    // чтобы вставить в конец листа, делаем инсерт по итератору энд
-  }
-
   void push_back(const T& value) {
     Node* node = create_node(value);
     if(empty()) {
       link_with_node(fakeNode, node);
     } else {
-      link_three_nodes_from_left(fakeNode, fakeNode->prev, node);
+      link_three_nodes_from_left(fakeNode, static_cast<Node*>(fakeNode->prev), node);
     }
     ++size_;
   }
@@ -296,13 +304,39 @@ class List {
     }
     ++size_;
   }
-  void pop_back() {};
+
+  template <bool IsConst>
+  void insert(Iterator<IsConst> iter, const T& value) { //problems with const iter
+    Node* next_node = static_cast<Node*>(iter.node);
+    Node* prev_node = static_cast<Node*>(next_node->prev);
+    Node* new_node = create_node(value);
+    prev_node->next = new_node;
+    new_node->prev = prev_node;
+    new_node->next = next_node;
+    next_node->prev = new_node;
+    ++size_;
+    //вставка по константному итератору, значение вставляется ПЕРЕД итератором
+    // чтобы вставить в начало листа, делаем инсерт по итератору бегин
+    // чтобы вставить в конец листа, делаем инсерт по итератору энд
+  }
+  template <bool IsConst>
+  void erase(Iterator<IsConst> iter) {
+    BaseNode* pop_node = iter.node;
+    BaseNode* first = pop_node->prev;
+    BaseNode* second = pop_node->next;
+    first->next = second;
+    second->prev = first;
+    deallocate_node(static_cast<Node*>(pop_node));
+    --size_;
+  }
+  void pop_back() { erase(--end()); }
+  void pop_front() { erase(begin()); }
 };
 
 template <typename T, typename Alloc>
 template <bool IsConst>
 std::conditional_t<IsConst, const T&, T&> List<T, Alloc>::Iterator<IsConst>::operator*() const {
-  return node->value;
+  return (static_cast<Node*>(node))->value;
 }
 
 template <typename T, typename Alloc>
@@ -334,18 +368,50 @@ List<T, Alloc>::List(const Alloc& alloc) : size_(0), alloc_(AllocTraits::select_
   create_fakenode();
 }
 template <typename T, typename Alloc>
-List<T, Alloc>::List(size_t size, const Alloc& alloc) : List(alloc), size_(size) {
+List<T, Alloc>::List(size_t size, const Alloc& alloc) : List(alloc) {
+  size_ = size;
   fill_empty();
 }
 
 template <typename T, typename Alloc>
-List<T, Alloc>::List(size_t size, const T& value, const Alloc& alloc) : List(alloc), size_(size) {
+List<T, Alloc>::List(size_t size, const T& value, const Alloc& alloc) : List(alloc) {
+  size_ = size;
   fill_with_value(value);
 }
 
-template<typename T, typename Allocator>
-List<T, Allocator>::List(const List& other) : List(other.alloc_), size_(other.size_) {
+template<typename T, typename Alloc>
+List<T, Alloc>::List(const List& other) : List(other.alloc_) {
+  size_ = other.size_;
   for(auto it = other.begin(); it != other.end(); ++it) {
     push_back(*it);
   }
 }
+
+template<typename T, typename Alloc>
+List<T, Alloc>& List<T, Alloc>:: operator=(const List& other) {
+  auto copy = &other;
+  while (size_ != 0) pop_back();
+  if(AllocTraits::propagate_on_container_copy_assignment::value) {
+    AllocTraits::deallocate(alloc_, static_cast<Node*>(fakeNode), 1);
+    alloc_ = other.alloc_;
+    fakeNode = AllocTraits::allocate(alloc_, 1);
+    fakeNode->next = fakeNode;
+    fakeNode->prev = fakeNode;
+  }
+  BaseNode* other_begin = other.fakeNode->next;
+  for (auto& elem: other) {
+    push_back(elem);
+    other_begin = other_begin->next;
+  }
+  return *this;
+}
+
+template <typename T, class Alloc>
+List<T, Alloc>::~List() {
+  while (size_ != 0) {
+    pop_back();
+  }
+  AllocTraits::deallocate(alloc_, static_cast<Node*>(fakeNode), 1);
+//  AllocTraits::deallocate(alloc_, fakeNode, 1);
+}
+
