@@ -1,14 +1,3 @@
-//Напишите класс List - двусвязный список с правильным использованием аллокатора. Правильное использование аллокатора означает, что ваш лист должен удовлетворять требованиям https://en.cppreference.com/w/cpp/named_req/AllocatorAwareContainer. Должно быть два шаблонных параметра: T - тип элементов в листе, Allocator - тип используемого аллокатора (по умолчанию - std::allocator<T>).
-//Должны быть поддержаны:
-//Конструкторы: без параметров; от одного числа; от числа и const T&; от одного аллокатора; от числа и аллокатора; от числа, const T& и аллокатора. Если создается пустой лист, то не должно быть никаких выделений динамической памяти, независимо от того, на каком аллокаторе построен этот лист.
-//Метод get_allocator(), возвращающий объект аллокатора, используемый в листе на данный момент;
-//Конструктор копирования, деструктор, копирующий оператор присваивания;
-//Метод size(), работающий за O(1);
-//Методы push_back, push_front, pop_back, pop_front;
-//Двунаправленные итераторы, удовлетворяющие требованиям https://en.cppreference.com/w/cpp/named_req/BidirectionalIterator. Также поддержите константные и reverse-итераторы;
-//Методы begin, end, cbegin, cend, rbegin, rend, crbegin, crend;
-//Методы insert(iterator, const T&), а также erase(iterator) - для удаления и добавления одиночных элементов в список.
-//Если аллокатор является структурой без каких-либо полей, то такой аллокатор не должен увеличивать sizeof объекта листа. То есть тривиальный аллокатор как поле листа должен занимать 0 байт.:
 #include <iostream>
 #include <memory>
 //в листе bidirectional_iterator
@@ -49,7 +38,7 @@ class StackAllocator {
   template <typename U>
   StackAllocator(const StackAllocator<U, N>& other)
       : pool_(other.pool_) {} //по-моему нужен еще конструктор, еще с except
-  StackAllocator(const StackStorage<N>&) = default;
+  explicit StackAllocator(StackStorage<N>& pool) : pool_(&pool) {};
   ~StackAllocator() {}
   template <typename U>
   StackAllocator<T, N>& operator=(StackAllocator<U, N> other);
@@ -57,9 +46,9 @@ class StackAllocator {
   void deallocate(T*, size_t) {};
   void swap(StackAllocator& alloc);
 
-  StackAllocator<T, N> select_on_container_copy_construction() { //нужен ли вообще этот метод
-    return MyAllocator<T>(*this);
-  }
+//  StackAllocator<T, N> select_on_container_copy_construction() { //нужен ли вообще этот метод
+//    return MyAllocator<T>(*this);
+//  }
 
   template <typename U>
   struct rebind {
@@ -101,7 +90,7 @@ class List {
     Node() : BaseNode(), value() {}
     Node(const T& value) : BaseNode(), value(value) {}
     Node(const BaseNode &arg, const T &val) : BaseNode(arg), value(val) {}
-    Node(BaseNode* arg) : BaseNode(arg), value() {} //конструктор от бейзноды
+    Node(BaseNode* arg) : BaseNode(), value() {} //конструктор от бейзноды
   };
 
   BaseNode* fakeNode; // for function link two_nodes
@@ -113,6 +102,7 @@ class List {
   List(const Alloc&);
   List(size_t, const Alloc&);
   List(size_t, const T&, const Alloc&);
+  List(const List&);
   // переписать
 //cделать указатель на налптр или указатель на самого себя
   using value_type = T;
@@ -129,9 +119,23 @@ class List {
 
  private:
   NodeAlloc alloc_;
+ public:
 
-  struct Iterator {
+  template <bool IsConst>
+  class Iterator {
+
+   public:
     BaseNode* node;
+    using iterator_category = std::bidirectional_iterator_tag;
+    using pointer = std::conditional_t<IsConst, const T* , T* >;
+    using reference = std::conditional_t<IsConst, const T &, T &>;
+    using difference_type = std::ptrdiff_t;
+    using value_type = std::conditional_t<IsConst, const T, T>;
+
+    std::conditional_t<IsConst, const T&, T&> operator*() const;
+    std::conditional_t<IsConst, const T*, T*> operator->() const;
+    Iterator(BaseNode* ptr) : node(ptr) {}
+    Iterator(const Iterator<false>& other) : node(other.node) {}
 
     Iterator& operator++() {
       node = node->next;
@@ -139,7 +143,9 @@ class List {
     }
 
     Iterator operator++(int) {
-
+      Iterator copy(*this);
+      operator++();
+      return copy;
     }
 
     Iterator& operator--() {
@@ -148,21 +154,63 @@ class List {
     }
 
     Iterator operator--(int) {
-
+      Iterator copy(*this);
+      operator--();
+      return copy;
     }
 
+    Iterator& operator=(const Iterator& other) {
+      node = other.node;
+      return *this;
+    }
+
+    Iterator& operator+=(size_t n) {
+      for (int i = 0; i < n; ++i) {
+        node = node->next;
+      }
+    }
+
+    Iterator& operator-=(size_t n) {
+      for (int i = 0; i < n; ++i) {
+        node = node->prev;
+      }
+    }
+
+    bool operator==(const Iterator& other) const {
+      return node == other.node;
+    }
+
+    bool operator!=(const Iterator& other) const {
+      return node != other.node;
+    }
   };
 
  public:
-//  BaseNode* get_fakeNode() {
-//    return fakeNode;
-//  }
+
+    using iterator = Iterator<false>;
+    using const_iterator = Iterator<true>;
+    using reverse_iterator = std::reverse_iterator<iterator>;
+    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
+  iterator begin() { return iterator(fakeNode->next); }
+  const_iterator begin() const  { return begin(); }
+  iterator end() { return iterator(fakeNode); }
+  const_iterator end() const { return end(); }
+  const_iterator cbegin() const { return begin(); }
+  const_iterator cend() const { return end(); }
+  reverse_iterator rbegin() { return reverse_iterator(fakeNode); }
+  const_reverse_iterator rbegin() const { return const_reverse_iterator(end());}
+  reverse_iterator rend() { return reverse_iterator(begin()); }
+  const_reverse_iterator rend() const { return const_reverse_iterator(begin());}
+  const_reverse_iterator crbegin() const { return const_reverse_iterator(end()); }
+  const_reverse_iterator crend() const { return const_reverse_iterator(begin()); }
 
   BaseNode* create_basenode() {
     BaseNode* node = AllocTraits::allocate(alloc_, 1);
     AllocTraits::construct(alloc_, node);
     return node;
   }
+
   Node* create_node(const T& value) {
     Node* node = AllocTraits::allocate(alloc_, 1);
     AllocTraits::construct(alloc_, node, value);
@@ -180,20 +228,45 @@ class List {
     next->next = prev;
     prev->prev = next;
   }
+
   void link_with_node(BaseNode* prev, Node* next) {
-    link_two_basenodes(prev, next);
-}
-  void link_three_basenodes(BaseNode* first, BaseNode* second, BaseNode* third) {
-    second->next = third;
-    third->prev = second;
-    second->next = first;
-    first->prev = third;
+    link_with_basenode(prev, next);
   }
-  void link_three_nodes(BaseNode* first, Node* second, Node* third) {
+
+  void link_three_basenodes(BaseNode* first, BaseNode* second, BaseNode* third) {
+    third->prev = second;
+    second->next = third;
+    first->prev = third;
+    third->next = first;
+  }
+
+  void link_three_nodes_from_left(BaseNode* first, Node* second, Node* third) {
     link_three_basenodes(first, second, third);
   }
+
+  void fill_empty() {
+    Node* Node_before = static_cast<Node*>(create_basenode()); //как применить наследование от ноды, чтобы
+    link_with_basenode(fakeNode, Node_before);
+    for (size_t i = 1; i < size_; ++i) {
+      Node* newNode = static_cast<Node*>(create_basenode());
+      link_three_basenodes(fakeNode, Node_before, newNode);
+      Node_before = newNode;
+    }
+  }
+
+  void fill_with_value(const T& value) {
+    Node* Node_before = create_node(value);
+    link_two_nodes(fakeNode, Node_before);
+    for (size_t i = 1; i < size_; ++i) {
+      Node* newNode = create_node(value);
+      link_three_nodes_from_left(fakeNode, Node_before, newNode);
+      Node_before = newNode;
+    }
+  }
+
   size_t size() const { return size_; }
-  bool empty() const {return size_ == 0;}
+  NodeAlloc get_allocator() const { return alloc_;}
+  bool empty() const { return size_ == 0;}
   void clear() {}
 
   void insert() {//вставка по константному итератору, значение вставляется ПЕРЕД итератором
@@ -201,9 +274,44 @@ class List {
     // чтобы вставить в конец листа, делаем инсерт по итератору энд
   }
 
+  void push_back(const T& value) {
+    Node* node = create_node(value);
+    if(empty()) {
+      link_with_node(fakeNode, node);
+    } else {
+      link_three_nodes_from_left(fakeNode, fakeNode->prev, node);
+    }
+    ++size_;
+  }
+
+  void push_front(const T& value) {
+    Node* node = create_node(value);
+    if(empty()) {
+      link_with_node(fakeNode, node);
+    } else {
+      node->next = fakeNode->next;
+      node->prev = fakeNode;
+      fakeNode->next = node;
+      fakeNode->next->prev = node;
+    }
+    ++size_;
+  }
+  void pop_back() {};
 };
 
-//сделать конструкторы
+template <typename T, typename Alloc>
+template <bool IsConst>
+std::conditional_t<IsConst, const T&, T&> List<T, Alloc>::Iterator<IsConst>::operator*() const {
+  return node->value;
+}
+
+template <typename T, typename Alloc>
+template <bool IsConst>
+std::conditional_t<IsConst, const T*, T*> List<T, Alloc>::Iterator<IsConst>::operator->() const {
+  return *Iterator(node);
+}
+
+
 template <typename T, typename Alloc>
 List<T, Alloc>::List() : size_(0), alloc_(NodeAlloc()) {
   create_fakenode();
@@ -212,35 +320,32 @@ List<T, Alloc>::List() : size_(0), alloc_(NodeAlloc()) {
 template <typename T, typename Alloc>
 List<T, Alloc>::List(size_t size) : size_(size), alloc_(NodeAlloc()) {
   create_fakenode();
-  BaseNode* Node_before = create_basenode(); //как применить наследование от ноды, чтобы
-  link_with_basenode(fakeNode, Node_before);
-  for (size_t i = 1; i < size_; ++i) {
-    BaseNode* newNode = create_basenode();
-    link_three_basenodes(fakeNode, Node_before, newNode);
-    Node_before = newNode;
-  }
+  fill_empty();
 }
 
 template <typename T, typename Alloc>
 List<T, Alloc>::List(size_t size, const T& value) : size_(size), alloc_(NodeAlloc()) {
   create_fakenode();
-  Node* Node_before = create_node();
-  link_two_nodes(fakeNode, Node_before);
-  for (size_t i = 1; i < size_; ++i) {
-    Node* newNode = create_node();
-    link_three_nodes(fakeNode, Node_before, newNode);
-    Node_before = newNode;
-  }
+  fill_with_value(value);
 }
 
 template <typename T, typename Alloc>
-List<T, Alloc>::List(const Alloc& alloc) : size_(0), alloc_(AllocTraits::select_on_container_copy_construction()) {
+List<T, Alloc>::List(const Alloc& alloc) : size_(0), alloc_(AllocTraits::select_on_container_copy_construction(alloc)) {
   create_fakenode();
 }
 template <typename T, typename Alloc>
-List<T, Alloc>::List(size_t, const T&, const Alloc&);
+List<T, Alloc>::List(size_t size, const Alloc& alloc) : List(alloc), size_(size) {
+  fill_empty();
+}
 
+template <typename T, typename Alloc>
+List<T, Alloc>::List(size_t size, const T& value, const Alloc& alloc) : List(alloc), size_(size) {
+  fill_with_value(value);
+}
 
-int main() {
-  List<int> l(5);
+template<typename T, typename Allocator>
+List<T, Allocator>::List(const List& other) : List(other.alloc_), size_(other.size_) {
+  for(auto it = other.begin(); it != other.end(); ++it) {
+    push_back(*it);
+  }
 }
